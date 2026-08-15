@@ -9,6 +9,10 @@ import (
 )
 
 func TestValidateOpenAPI(t *testing.T) {
+	methods := RequiredOpenAPIPaths["/panel/api/setting/all"]
+	if len(methods) != 1 || methods[0] != "post" {
+		t.Fatalf("setting/all must use its documented read-only POST contract: %v", methods)
+	}
 	paths := map[string]any{}
 	for path, methods := range RequiredOpenAPIPaths {
 		ops := map[string]any{}

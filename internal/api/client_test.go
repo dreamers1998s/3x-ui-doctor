@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -114,6 +115,38 @@ func TestPanelEndpointAllowlist(t *testing.T) {
 	}
 	if _, err := client.GetPanel(context.Background(), "/panel/api/../login"); err == nil {
 		t.Fatal("path traversal allowed")
+	}
+	if _, err := client.PostPanelRead(context.Background(), "/panel/api/clients/list"); err == nil {
+		t.Fatal("unlisted read-only POST endpoint allowed")
+	}
+}
+
+func TestPostPanelReadUsesExactAllowlistAndAuthentication(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/panel/api/setting/all" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer read-secret" {
+			t.Fatalf("missing bearer authorization: %q", r.Header.Get("Authorization"))
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("unexpected content type: %q", r.Header.Get("Content-Type"))
+		}
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != "{}" {
+			t.Fatalf("unexpected body: %q", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"obj":{}}`))
+	}))
+	defer server.Close()
+	pin := sha256.Sum256(server.Certificate().Raw)
+	client, err := New(Options{BaseURL: server.URL, Token: "read-secret", Timeout: time.Second, TLSPinSHA256: hex.EncodeToString(pin[:])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.PostPanelRead(context.Background(), "/panel/api/setting/all"); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -172,7 +172,7 @@ func (c *Collector) collectPanel(ctx context.Context, panel config.Panel) panelW
 			c.addParseObservation(&work, "API-001", "clients", err)
 		}
 	}
-	if body := c.fetch(ctx, &work, client, "/panel/api/setting/all", true); body != nil {
+	if body := c.fetchPostRead(ctx, &work, client, "/panel/api/setting/all", true); body != nil {
 		if value, err := adapter.ParseSettings(body); err == nil {
 			work.raw.Settings = value
 		} else {
@@ -195,22 +195,30 @@ func (c *Collector) collectPanel(ctx context.Context, panel config.Panel) panelW
 }
 
 func (c *Collector) fetch(ctx context.Context, work *panelWork, client *api.Client, path string, expectEnvelope bool) []byte {
-	resp, err := client.GetPanel(ctx, path)
+	return c.fetchWith(ctx, work, path, expectEnvelope, "GET", client.GetPanel)
+}
+
+func (c *Collector) fetchPostRead(ctx context.Context, work *panelWork, client *api.Client, path string, expectEnvelope bool) []byte {
+	return c.fetchWith(ctx, work, path, expectEnvelope, "POST", client.PostPanelRead)
+}
+
+func (c *Collector) fetchWith(ctx context.Context, work *panelWork, path string, expectEnvelope bool, verb string, request func(context.Context, string) (api.Response, error)) []byte {
+	resp, err := request(ctx, path)
 	if err != nil {
-		work.safe.Observations = append(work.safe.Observations, model.Observation{RuleID: "API-001", Subject: work.safe.Alias, Kind: "request_failed", Observed: redact.SanitizedErrorCode(err.Error()), Expected: "successful authenticated read", Evidence: "GET " + pathTemplate(path), Inconclusive: true})
+		work.safe.Observations = append(work.safe.Observations, model.Observation{RuleID: "API-001", Subject: work.safe.Alias, Kind: "request_failed", Observed: redact.SanitizedErrorCode(err.Error()), Expected: "successful authenticated read", Evidence: verb + " " + pathTemplate(path), Inconclusive: true})
 		return nil
 	}
 	if resp.BodyLength == 0 {
-		work.safe.Observations = append(work.safe.Observations, model.Observation{RuleID: "API-001", Subject: work.safe.Alias, Kind: "empty_success", Observed: "HTTP 2xx with empty body", Expected: "non-empty JSON response", Evidence: "GET " + pathTemplate(path), Blocking: true})
+		work.safe.Observations = append(work.safe.Observations, model.Observation{RuleID: "API-001", Subject: work.safe.Alias, Kind: "empty_success", Observed: "HTTP 2xx with empty body", Expected: "non-empty JSON response", Evidence: verb + " " + pathTemplate(path), Blocking: true})
 		return nil
 	}
 	if resp.ContentType != "application/json" && !strings.HasSuffix(resp.ContentType, "+json") {
-		work.safe.Observations = append(work.safe.Observations, model.Observation{RuleID: "API-001", Subject: work.safe.Alias, Kind: "media_type_mismatch", Observed: safeMediaType(resp.ContentType), Expected: "application/json", Evidence: "GET " + pathTemplate(path), Blocking: true})
+		work.safe.Observations = append(work.safe.Observations, model.Observation{RuleID: "API-001", Subject: work.safe.Alias, Kind: "media_type_mismatch", Observed: safeMediaType(resp.ContentType), Expected: "application/json", Evidence: verb + " " + pathTemplate(path), Blocking: true})
 		return nil
 	}
 	if expectEnvelope {
 		if err := adapter.ValidateEnvelope(resp.Body); err != nil {
-			work.safe.Observations = append(work.safe.Observations, model.Observation{RuleID: "API-001", Subject: work.safe.Alias, Kind: "envelope_mismatch", Observed: redact.SanitizedErrorCode(err.Error()), Expected: "successful API envelope", Evidence: "GET " + pathTemplate(path), Blocking: true})
+			work.safe.Observations = append(work.safe.Observations, model.Observation{RuleID: "API-001", Subject: work.safe.Alias, Kind: "envelope_mismatch", Observed: redact.SanitizedErrorCode(err.Error()), Expected: "successful API envelope", Evidence: verb + " " + pathTemplate(path), Blocking: true})
 			return nil
 		}
 	}

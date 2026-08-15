@@ -17,6 +17,10 @@ import (
 
 const maxResponseBytes = 32 << 20
 
+var panelReadPostAllowlist = map[string]struct{}{
+	"/panel/api/setting/all": {},
+}
+
 type Response struct {
 	StatusCode  int
 	ContentType string
@@ -105,14 +109,25 @@ func New(opts Options) (*Client, error) {
 }
 
 func (c *Client) GetPanel(ctx context.Context, path string) (Response, error) {
-	if !strings.HasPrefix(path, "/panel/api/") || strings.Contains(path, "..") {
-		return Response{}, errors.New("endpoint is not on the read-only panel API allowlist")
+	u, err := c.panelURL(path)
+	if err != nil {
+		return Response{}, err
 	}
-	u := *c.baseURL
-	u.Path = strings.TrimRight(c.baseURL.Path, "/") + path
-	u.RawQuery = ""
-	u.Fragment = ""
-	return c.get(ctx, c.panelHTTP, &u, true)
+	return c.request(ctx, c.panelHTTP, u, true, http.MethodGet, nil)
+}
+
+// PostPanelRead calls an upstream endpoint whose HTTP method is POST but whose
+// documented semantics are read-only. The exact-path allowlist prevents this
+// helper from becoming a general mutation surface.
+func (c *Client) PostPanelRead(ctx context.Context, path string) (Response, error) {
+	if _, ok := panelReadPostAllowlist[path]; !ok {
+		return Response{}, errors.New("endpoint is not on the read-only POST allowlist")
+	}
+	u, err := c.panelURL(path)
+	if err != nil {
+		return Response{}, err
+	}
+	return c.request(ctx, c.panelHTTP, u, true, http.MethodPost, strings.NewReader("{}"))
 }
 
 func (c *Client) GetExternal(ctx context.Context, rawURL string) (Response, error) {
@@ -127,16 +142,30 @@ func (c *Client) GetExternal(ctx context.Context, rawURL string) (Response, erro
 	if sameOrigin(c.baseURL, u) {
 		hc = c.panelHTTP
 	}
-	return c.get(ctx, hc, u, false)
+	return c.request(ctx, hc, u, false, http.MethodGet, nil)
 }
 
-func (c *Client) get(ctx context.Context, hc *http.Client, u *url.URL, authenticated bool) (Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+func (c *Client) panelURL(path string) (*url.URL, error) {
+	if !strings.HasPrefix(path, "/panel/api/") || strings.Contains(path, "..") {
+		return nil, errors.New("endpoint is not on the read-only panel API allowlist")
+	}
+	u := *c.baseURL
+	u.Path = strings.TrimRight(c.baseURL.Path, "/") + path
+	u.RawQuery = ""
+	u.Fragment = ""
+	return &u, nil
+}
+
+func (c *Client) request(ctx context.Context, hc *http.Client, u *url.URL, authenticated bool, method string, requestBody io.Reader) (Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), requestBody)
 	if err != nil {
 		return Response{}, errors.New("build request failed")
 	}
 	req.Header.Set("Accept", "application/json, application/yaml, text/yaml, text/plain;q=0.9, */*;q=0.1")
 	req.Header.Set("User-Agent", "3x-ui-doctor/0.1")
+	if method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	if authenticated && sameOrigin(c.baseURL, u) {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}

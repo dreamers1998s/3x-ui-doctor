@@ -22,7 +22,7 @@ var RequiredOpenAPIPaths = map[string][]string{
 	"/panel/api/clients/subLinks/{subId}":  {"get"},
 	"/panel/api/clients/links/{email}":     {"get"},
 	"/panel/api/nodes/list":                {"get"},
-	"/panel/api/setting/all":               {"get"},
+	"/panel/api/setting/all":               {"post"},
 }
 
 type Envelope struct {

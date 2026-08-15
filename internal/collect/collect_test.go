@@ -66,6 +66,10 @@ func TestCollectorRedactsAndCapsSubscriptionsAtScale(t *testing.T) {
 				writeEnvelope(w, []any{})
 			}
 		case r.URL.Path == "/panel/api/setting/all":
+			if r.Method != http.MethodPost {
+				http.Error(w, "setting read requires POST", http.StatusMethodNotAllowed)
+				return
+			}
 			writeEnvelope(w, map[string]any{"subEnable": false, "subJsonEnable": false, "subClashEnable": false})
 		case r.URL.Path == "/panel/api/nodes/list":
 			writeEnvelope(w, []any{

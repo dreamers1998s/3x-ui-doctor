@@ -62,15 +62,22 @@ start_initial() {
 
 mint_token() {
   curl --silent --show-error --fail --cacert "$work/cert.pem" \
-    -c "$work/cookies" -H 'Content-Type: application/x-www-form-urlencoded' \
-    --data-urlencode 'username=doctor-ci' \
-    --data-urlencode 'password=doctor-ci-password' \
+    -c "$work/cookies" "$base/csrf-token" > "$work/csrf-before-login.json"
+  local csrf
+  csrf="$(jq -er '.obj | select(type == "string" and length > 0)' "$work/csrf-before-login.json")"
+
+  curl --silent --show-error --fail --cacert "$work/cert.pem" \
+    -b "$work/cookies" -c "$work/cookies" \
+    -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' \
+    --data '{"username":"doctor-ci","password":"doctor-ci-password"}' \
     "$base/login" > "$work/login.json"
   jq -e '.success == true' "$work/login.json" >/dev/null
+
   curl --silent --show-error --fail --cacert "$work/cert.pem" \
-    -b "$work/cookies" "$base/csrf-token" > "$work/csrf.json"
-  local csrf
-  csrf="$(jq -r '.obj' "$work/csrf.json")"
+    -b "$work/cookies" -c "$work/cookies" \
+    "$base/csrf-token" > "$work/csrf-after-login.json"
+  csrf="$(jq -er '.obj | select(type == "string" and length > 0)' "$work/csrf-after-login.json")"
+
   curl --silent --show-error --fail --cacert "$work/cert.pem" \
     -b "$work/cookies" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' \
     --data '{"name":"doctor-ci"}' \

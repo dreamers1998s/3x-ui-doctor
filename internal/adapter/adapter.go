@@ -13,7 +13,6 @@ import (
 )
 
 var RequiredOpenAPIPaths = map[string][]string{
-	"/panel/api/openapi.json":              {"get"},
 	"/panel/api/server/status":             {"get"},
 	"/panel/api/server/getPanelUpdateInfo": {"get"},
 	"/panel/api/server/getConfigJson":      {"get"},

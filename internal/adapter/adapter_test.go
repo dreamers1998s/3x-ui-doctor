@@ -9,6 +9,9 @@ import (
 )
 
 func TestValidateOpenAPI(t *testing.T) {
+	if _, ok := RequiredOpenAPIPaths["/panel/api/openapi.json"]; ok {
+		t.Fatal("OpenAPI document must not be required to describe its own serving route")
+	}
 	methods := RequiredOpenAPIPaths["/panel/api/setting/all"]
 	if len(methods) != 1 || methods[0] != "post" {
 		t.Fatalf("setting/all must use its documented read-only POST contract: %v", methods)

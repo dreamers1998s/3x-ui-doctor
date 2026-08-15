@@ -117,8 +117,19 @@ EOF
 
 accept_audit_exit() {
   local code="$1"
+  local report="$2"
   if [[ "$code" != 0 && "$code" != 2 ]]; then
     echo "unexpected Doctor exit code: $code" >&2
+    if [[ -s "$report" ]]; then
+      jq '{
+        readiness,
+        failures: [
+          .findings[]
+          | select(.status == "FAIL")
+          | {rule_id, status, title, observed, expected, evidence}
+        ]
+      }' "$report" >&2
+    fi
     return 1
   fi
 }
@@ -133,7 +144,7 @@ set +e
   --baseline-out "$work/before.json" --observe 0s --format json --output "$work/preflight.json"
 preflight_code=$?
 set -e
-accept_audit_exit "$preflight_code"
+accept_audit_exit "$preflight_code" "$work/preflight.json"
 jq -e '.schema_version == 1 and (.readiness == "READY" or .readiness == "INCONCLUSIVE")' "$work/preflight.json" >/dev/null
 
 docker rm -f "$name" >/dev/null
@@ -148,5 +159,5 @@ set +e
   --observe 0s --format json --output "$work/verify.json"
 verify_code=$?
 set -e
-accept_audit_exit "$verify_code"
+accept_audit_exit "$verify_code" "$work/verify.json"
 jq -e '.schema_version == 1 and (.readiness == "READY" or .readiness == "INCONCLUSIVE")' "$work/verify.json" >/dev/null

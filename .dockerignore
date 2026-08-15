@@ -1,0 +1,10 @@
+.git
+.github
+.cache
+.tools
+bin
+dist
+*.json
+*.md
+doctor*.yaml
+compose*.yml

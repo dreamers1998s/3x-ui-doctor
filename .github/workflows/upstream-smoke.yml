@@ -1,0 +1,33 @@
+name: Upstream compatibility smoke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.6
+          cache: true
+      - run: go build -trimpath -o dist/xui-doctor ./cmd/xui-doctor
+      - name: Exercise v3.5.0 preflight and v3.6.0 verify
+        env:
+          XUI_IMAGE_350: ghcr.io/mhsanaei/3x-ui:v3.5.0@sha256:344f7a68a91e59d592fc355d67e32d8c2041b1c2082a7eaa3c413dc3a5cab7db
+          XUI_IMAGE_360: ghcr.io/mhsanaei/3x-ui:v3.6.0@sha256:652ef431a2d351cfcc7b5dc91798de5c1dd50da8c1b44f9e3afee1c60817035e
+        run: bash scripts/upstream-smoke.sh

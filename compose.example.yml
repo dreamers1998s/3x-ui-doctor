@@ -1,0 +1,22 @@
+services:
+  doctor:
+    build: .
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      XUI_MASTER_TOKEN: ${XUI_MASTER_TOKEN:?required}
+      XUI_NODE_DE_TOKEN: ${XUI_NODE_DE_TOKEN:-}
+      XUI_DOCTOR_HMAC_KEY: ${XUI_DOCTOR_HMAC_KEY:?required}
+    volumes:
+      - ./doctor.yaml:/config/doctor.yaml:ro
+      - ./reports:/reports
+    command:
+      - check
+      - --config
+      - /config/doctor.yaml
+      - --format
+      - markdown
+      - --output
+      - /reports/check.md

@@ -1,0 +1,14 @@
+schema_version: 1
+rules:
+  - {id: API-001, title: Safe API response contract, default_failure: BLOCKED}
+  - {id: API-003, title: OpenAPI compatibility, default_failure: BLOCKED}
+  - {id: CFG-001, title: Fallback target resolution, default_failure: BLOCKED}
+  - {id: CFG-002, title: Target configuration compatibility, default_failure: BLOCKED}
+  - {id: CFG-003, title: Saved and generated configuration consistency, default_failure: BLOCKED}
+  - {id: SUB-001, title: Subscription round-trip parsing, default_failure: BLOCKED}
+  - {id: SUB-003, title: Share and subscription consistency, default_failure: BLOCKED}
+  - {id: NODE-001, title: Required node health and identity, default_failure: INCONCLUSIVE}
+  - {id: NODE-003, title: Assigned object consistency, default_failure: BLOCKED}
+  - {id: TRAFFIC-001, title: Repeated traffic accumulation, default_failure: BLOCKED}
+  - {id: TRAFFIC-002, title: Persistent cross-node traffic deviation, default_failure: BLOCKED}
+  - {id: LIMIT-001, title: Quota and enable-state consistency, default_failure: BLOCKED}

@@ -1,0 +1,39 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.6
+          cache: true
+      - run: go mod verify
+      - run: go test ./...
+      - run: go test -race ./...
+      - run: go vet ./...
+      - name: Fuzz smoke
+        run: go test ./internal/subscription -run '^$' -fuzz FuzzParseRaw -fuzztime 5s
+      - name: Cross-build release targets
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /tmp/xui-doctor-amd64 ./cmd/xui-doctor
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /tmp/xui-doctor-arm64 ./cmd/xui-doctor
+      - name: Non-root container smoke
+        run: |
+          docker build --build-arg VERSION=ci -t xui-doctor:test .
+          test "$(docker image inspect xui-doctor:test --format '{{.Config.User}}')" != "0"
+          test "$(docker run --rm --read-only --cap-drop=ALL xui-doctor:test version)" = "ci"
+      - name: Vulnerability scan
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: 1.26.6
+          go-package: ./...

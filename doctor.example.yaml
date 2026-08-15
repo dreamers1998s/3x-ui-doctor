@@ -1,0 +1,40 @@
+schema_version: 1
+
+panels:
+  - id: master
+    role: master
+    url: https://panel.example.com/secret-base-path
+    token_env: XUI_MASTER_TOKEN
+    expected_guid: 11111111-1111-1111-1111-111111111111
+    # Optional explicit trust root for a self-signed panel certificate.
+    # tls_pin_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - id: node-de
+    role: node
+    url: https://node-de.example.com/secret-base-path
+    token_env: XUI_NODE_DE_TOKEN
+    expected_guid: 22222222-2222-2222-2222-222222222222
+    master_node_guid: 22222222-2222-2222-2222-222222222222
+
+redaction:
+  key_env: XUI_DOCTOR_HMAC_KEY
+  key_id: production-2026-v1
+
+subscription:
+  sample_cap: 50
+
+traffic:
+  relative_threshold: 0.05
+  absolute_threshold_bytes: 67108864
+  limit_grace: 30s
+
+transport:
+  request_timeout: 10s
+  panel_concurrency: 4
+  requests_per_panel: 2
+  # proxy_url_env: XUI_DOCTOR_PROXY_URL
+  allowed_redirect_hosts:
+    - subscriptions.example.com
+
+report:
+  include_network_identifiers: false

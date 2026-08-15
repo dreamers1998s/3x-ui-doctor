@@ -1,0 +1,9 @@
+.tools/
+.cache/
+bin/
+dist/
+coverage.out
+*.test
+before.json
+report.json
+report.md

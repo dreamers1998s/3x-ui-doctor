@@ -193,6 +193,58 @@ func TestFetchClassifiesUnsafeResponses(t *testing.T) {
 	}
 }
 
+func TestCollectStatusRetriesWarmingCache(t *testing.T) {
+	var requests atomic.Int64
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if requests.Add(1) < statusAttempts {
+			writeJSON(w, map[string]any{"success": true, "obj": nil})
+			return
+		}
+		writeEnvelope(w, map[string]any{"xray": map[string]any{"state": "running", "version": "v26.7.11"}})
+	}))
+	defer server.Close()
+	collector := statusTestCollector(t, server)
+	collector.statusRetryDelay = time.Millisecond
+	work := panelWork{safe: model.PanelSnapshot{Alias: "panel_test"}}
+	collector.collectStatus(context.Background(), &work, collector.clients["master"])
+	if requests.Load() != statusAttempts || work.safe.XrayState != "running" || work.safe.XrayVersion != "v26.7.11" || len(work.safe.Observations) != 0 {
+		t.Fatalf("warming status was not recovered: requests=%d work=%+v", requests.Load(), work)
+	}
+}
+
+func TestCollectStatusPersistentEmptyIsInconclusive(t *testing.T) {
+	var requests atomic.Int64
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(w, map[string]any{"success": true, "obj": nil})
+	}))
+	defer server.Close()
+	collector := statusTestCollector(t, server)
+	collector.statusRetryDelay = time.Millisecond
+	work := panelWork{safe: model.PanelSnapshot{Alias: "panel_test"}}
+	collector.collectStatus(context.Background(), &work, collector.clients["master"])
+	if requests.Load() != statusAttempts || len(work.safe.Observations) != 1 || work.safe.Observations[0].Blocking || !work.safe.Observations[0].Inconclusive {
+		t.Fatalf("persistent empty status was not inconclusive: requests=%d observations=%+v", requests.Load(), work.safe.Observations)
+	}
+}
+
+func statusTestCollector(t *testing.T, server *httptest.Server) *Collector {
+	t.Helper()
+	pin := sha256.Sum256(server.Certificate().Raw)
+	runtime := &config.Runtime{
+		Config: config.Config{Panels: []config.Panel{{ID: "master", Role: model.RoleMaster, URL: server.URL, ExpectedGUID: "master-guid", TLSPinSHA256: hex.EncodeToString(pin[:])}}},
+		Tokens: map[string]string{"master": "secret"}, RequestTimeout: time.Second,
+		RedactionKey: []byte(strings.Repeat("h", 32)),
+	}
+	collector, err := New(runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return collector
+}
+
 func TestUnknownVersionUsesCompatibilityMode(t *testing.T) {
 	var versionSpecificRequests atomic.Int64
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

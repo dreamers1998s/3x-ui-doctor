@@ -2,6 +2,7 @@ package collect
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -19,10 +20,13 @@ import (
 )
 
 type Collector struct {
-	runtime  *config.Runtime
-	redactor *redact.Redactor
-	clients  map[string]*api.Client
+	runtime          *config.Runtime
+	redactor         *redact.Redactor
+	clients          map[string]*api.Client
+	statusRetryDelay time.Duration
 }
+
+const statusAttempts = 3
 
 type panelWork struct {
 	config    config.Panel
@@ -45,7 +49,7 @@ func New(runtime *config.Runtime) (*Collector, error) {
 		}
 		clients[panel.ID] = client
 	}
-	return &Collector{runtime: runtime, redactor: r, clients: clients}, nil
+	return &Collector{runtime: runtime, redactor: r, clients: clients, statusRetryDelay: time.Second}, nil
 }
 
 func (c *Collector) Collect(ctx context.Context, command, target string, observe time.Duration) (model.Snapshot, error) {
@@ -133,14 +137,7 @@ func (c *Collector) collectPanel(ctx context.Context, panel config.Panel) panelW
 			c.addParseObservation(&work, "API-001", "panel_update_info", err)
 		}
 	}
-	if body := c.fetch(ctx, &work, client, "/panel/api/server/status", true); body != nil {
-		if state, value, err := adapter.ParseStatus(body); err == nil {
-			work.raw.XrayState, work.raw.XrayVersion = safeStatus(state), value
-			work.safe.XrayState, work.safe.XrayVersion = safeStatus(state), value
-		} else {
-			c.addParseObservation(&work, "API-001", "server_status", err)
-		}
-	}
+	c.collectStatus(ctx, &work, client)
 	work.supported = work.raw.PanelVersion == "v3.5.0" || work.raw.PanelVersion == "v3.6.0"
 	for _, missing := range openAPIMissing {
 		observation := model.Observation{RuleID: "API-003", Subject: work.safe.Alias, Kind: "required_openapi_operation_missing", Observed: missing, Expected: "required operation present", Blocking: work.supported, Inconclusive: !work.supported}
@@ -200,6 +197,40 @@ func (c *Collector) fetch(ctx context.Context, work *panelWork, client *api.Clie
 
 func (c *Collector) fetchPostRead(ctx context.Context, work *panelWork, client *api.Client, path string, expectEnvelope bool) []byte {
 	return c.fetchWith(ctx, work, path, expectEnvelope, "POST", client.PostPanelRead)
+}
+
+func (c *Collector) collectStatus(ctx context.Context, work *panelWork, client *api.Client) {
+	for attempt := 0; attempt < statusAttempts; attempt++ {
+		body := c.fetch(ctx, work, client, "/panel/api/server/status", true)
+		if body == nil {
+			return
+		}
+		state, value, err := adapter.ParseStatus(body)
+		if err == nil {
+			work.raw.XrayState, work.raw.XrayVersion = safeStatus(state), value
+			work.safe.XrayState, work.safe.XrayVersion = safeStatus(state), value
+			return
+		}
+		if !errors.Is(err, adapter.ErrEnvelopeObjectMissing) {
+			c.addParseObservation(work, "API-001", "server_status", err)
+			return
+		}
+		if attempt+1 < statusAttempts {
+			delay := c.statusRetryDelay
+			if delay <= 0 {
+				delay = time.Second
+			}
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				work.safe.Observations = append(work.safe.Observations, model.Observation{RuleID: "API-001", Subject: work.safe.Alias, Kind: "server_status_unavailable", Observed: "status retry interrupted", Expected: "non-null status snapshot", Evidence: "GET /panel/api/server/status", Inconclusive: true})
+				return
+			case <-timer.C:
+			}
+		}
+	}
+	work.safe.Observations = append(work.safe.Observations, model.Observation{RuleID: "API-001", Subject: work.safe.Alias, Kind: "server_status_unavailable", Observed: "status cache unavailable after bounded retry", Expected: "non-null status snapshot", Evidence: "GET /panel/api/server/status", Inconclusive: true})
 }
 
 func (c *Collector) fetchWith(ctx context.Context, work *panelWork, path string, expectEnvelope bool, verb string, request func(context.Context, string) (api.Response, error)) []byte {

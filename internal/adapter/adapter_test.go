@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -51,6 +52,12 @@ func TestEnvelopeValidationDistinguishesAPIFailure(t *testing.T) {
 	}
 	if _, err := DecodeEnvelope(body); err == nil {
 		t.Fatal("API failure should not decode as evidence")
+	}
+}
+
+func TestDecodeEnvelopeIdentifiesMissingObject(t *testing.T) {
+	if _, err := DecodeEnvelope([]byte(`{"success":true,"obj":null}`)); !errors.Is(err, ErrEnvelopeObjectMissing) {
+		t.Fatalf("missing object error was not identifiable: %v", err)
 	}
 }
 

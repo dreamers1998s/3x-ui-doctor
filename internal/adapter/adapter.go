@@ -3,6 +3,7 @@ package adapter
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -11,6 +12,8 @@ import (
 	"github.com/3x-ui-doctor/3x-ui-doctor/internal/model"
 	"github.com/3x-ui-doctor/3x-ui-doctor/internal/redact"
 )
+
+var ErrEnvelopeObjectMissing = errors.New("successful API response contains no object")
 
 var RequiredOpenAPIPaths = map[string][]string{
 	"/panel/api/server/status":             {"get"},
@@ -92,7 +95,7 @@ func DecodeEnvelope(body []byte) (json.RawMessage, error) {
 		return nil, fmt.Errorf("API reported failure")
 	}
 	if len(bytes.TrimSpace(env.Object)) == 0 || bytes.Equal(bytes.TrimSpace(env.Object), []byte("null")) {
-		return nil, fmt.Errorf("successful API response contains no object")
+		return nil, ErrEnvelopeObjectMissing
 	}
 	return env.Object, nil
 }
